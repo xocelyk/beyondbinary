@@ -7,7 +7,8 @@ import csv
 ## GLOBAL
 FILENAME = 'ThreeData.csv'
 SIGMA = 1  # can change depending on how smooth you want
-XBOUNDS = (-20, 20 + 1)  # the ILENAbounds (inches L/R) of our grid
+# bounds must be integers!
+XBOUNDS = (-20, 20 + 1)  # the bounds (inches L/R) of our grid
 (x1, x2) = XBOUNDS
 YBOUNDS = (-20, 20 + 1)  # the bounds (inches rimDepth) of our grid
 (y1, y2) = YBOUNDS
@@ -24,6 +25,10 @@ def clean_data(threedata):
     df['rimDepthInches'] = df.apply(lambda row: get_rimDepthInches(row), axis=1)
     df['rimLeftRightInches'] = df.apply(lambda row: get_rimLeftRightInches(row), axis=1)
     return df
+
+
+def myround(x, base=5):
+    return base * round(x/base)
 
 
 def get_shot_score(df):
@@ -44,18 +49,18 @@ def get_rimLeftRightInches(row):
     return row['rimLeftRight'] * 12
 
 
-def add_shot_score(row, angle_to_smooth_grid_dict):
+def add_shot_score(row):
     angle = row['arcAngleProxy']
-    if angle not in angle_to_smooth_grid_dict.keys():
+    if angle not in arcAngleProxy_to_two_dim_smooth_grid_dict.keys():
         return None
-    two_dim_gaussian = angle_to_smooth_grid_dict[angle]
+    two_dim_gaussian = arcAngleProxy_to_two_dim_smooth_grid_dict[angle]
     score = gaussian_to_score(row, two_dim_gaussian)
     return score
 
 
 def gaussian_to_score(row, smooth_grid):
-    x = round(row['rimLeftRightInches'])
-    y = round(row['rimDepthInches'])
+    x = myround(row['rimLeftRightInches'], base=grid_width)
+    y = myround(row['rimDepthInches'], base=grid_width)
     if not (XBOUNDS[0] <= x < XBOUNDS[1] and YBOUNDS[0] <= y < YBOUNDS[1]):
         return None
     return smooth_grid[x][y]
@@ -69,8 +74,8 @@ def get_gridded_shots(angle, df, xbounds, ybounds):
         if row['arcAngleProxy'] == angle:
             x = row['rimLeftRightInches']
             y = row['rimDepthInches']
-            array_x_idx = round(x) - xbounds[0]
-            array_y_idx = round(y) - ybounds[0]
+            array_x_idx = grid_width * (myround(x, base=grid_width) - xbounds[0]) # necessary that bounds be whole numbers
+            array_y_idx = grid_width * (myround(y, base=grid_width) - ybounds[0])
             if array_x_idx < 0 or array_x_idx >= xbounds[1] - xbounds[0] or array_y_idx < 0 or array_y_idx >= ybounds[
                 1] - ybounds[0]:
                 continue
