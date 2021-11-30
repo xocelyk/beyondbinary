@@ -4,24 +4,23 @@ import pandas as pd
 from statistics import mean
 import csv
 
-## GLOBAL
+# GLOBAL
 FILENAME = 'ThreeData.csv'
 SIGMA = 1  # can change depending on how smooth you want
 # sigma is measured in inches
 
-grid_width = 1
-SIGMA = SIGMA / grid_width
+grid_width = 1 # has returned strange results for different values thus far; keep at 1
+SIGMA = SIGMA / grid_width # to convert sigma units to inches
+
 # bounds must be integers!
 XBOUNDS = (-20, 20 + grid_width)  # the bounds (inches L/R) of our grid
 (x1, x2) = XBOUNDS
 YBOUNDS = (-20, 20 + grid_width)  # the bounds (inches rimDepth) of our grid
-
 (y1, y2) = YBOUNDS
-angle_bounds = [25, 55]  # have not tested values != 1 yet
-# this name sucks
+angle_bounds = [35, 55]
 arcAngleProxy_to_two_dim_smooth_grid_dict = {angle: None for angle in range(angle_bounds[0], angle_bounds[1] + 1)}
 
-# takes dataframe and returns dataframe with more objects
+# takes dataframe and returns dataframe with more parameters (we will use for our calculatioons)
 def clean_data(threedata):
     df = threedata
     df = df.dropna()
@@ -34,7 +33,7 @@ def clean_data(threedata):
 def myround(x, base=5):
     return base * round(x/base)
 
-
+# appends shotScore col to dataframe
 def add_shot_score(df):
     df['shotScore'] = df.apply(lambda row: get_shot_score(row),
                                axis=1)
@@ -52,7 +51,7 @@ def get_rimDepthInches(row):
 def get_rimLeftRightInches(row):
     return row['rimLeftRight'] * 12
 
-
+# calculates shotScore for individual shot
 def get_shot_score(row):
     angle = row['arcAngleProxy']
     if angle not in arcAngleProxy_to_two_dim_smooth_grid_dict.keys():
@@ -61,12 +60,7 @@ def get_shot_score(row):
     score = gaussian_to_score(row, two_dim_gaussian)
     return score
 
-
-# create a function to find the zeros of a quadratic function
-def quadratic_zero(a, b, c):
-    return (-b + np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
-
-
+# returns shotScore as a function of the two-dimensional gaussian-smoothed grid
 def gaussian_to_score(row, smooth_grid):
     x = myround(row['rimLeftRightInches'], base=grid_width)
     y = myround(row['rimDepthInches'], base=grid_width)
@@ -76,7 +70,7 @@ def gaussian_to_score(row, smooth_grid):
         return None
     return smooth_grid[x_idx][y_idx]
 
-
+# returns the shotScore grid (probability_make_grid) BEFORE smoothing
 def get_gridded_shots(angle, df, xbounds, ybounds):
     num_x_cells = int(1/grid_width * (xbounds[1] - xbounds[0]))
     num_y_cells = int(1/grid_width * (ybounds[1] - ybounds[0]))
@@ -89,7 +83,6 @@ def get_gridded_shots(angle, df, xbounds, ybounds):
             y = row['rimDepthInches']
             array_x_idx = int(1/grid_width) * int(myround(x, base=grid_width) - xbounds[0]) # necessary that bounds be whole numbers
             array_y_idx = int(1/grid_width) * int(myround(y, base=grid_width) - ybounds[0])
-            # print(array_x_idx, array_y_idx)
             if array_x_idx < 0 or array_x_idx >= xbounds[1] - xbounds[0] or array_y_idx < 0 or array_y_idx >= ybounds[
                 1] - ybounds[0]:
                 continue
@@ -105,33 +98,26 @@ def get_gridded_shots(angle, df, xbounds, ybounds):
     for row in grid_makes:
         total_makes += sum(row)
     total_shots -= 1 * int( 1/grid_width * (xbounds[1] - xbounds[0])) ** 2 # to account for initializing with +1 smoothing
-
-    # print('Total Makes: ', end='')
-    # print(total_makes, end='')
-    # print(', Total Shots: ', end='')
-    # print(total_shots, end=', ')
-
     probability_make_grid = np.divide(grid_makes, grid_total)
-    # print('Max Accuracy: ' + str(round(np.amax(probability_make_grid), 3)), end=', ')
     return probability_make_grid
 
-
+# returns the shotScore grid for a given angle and appends to the dataframe
 def get_smooth_gridded_shots(angle, df, xbounds, ybounds):
+    # unsmoothed grid
     probability_make_grid = get_gridded_shots(angle=angle, df=df, xbounds=xbounds, ybounds=ybounds)
     smooth_array = smooth_grid(probability_make_grid, sigma=SIGMA)
     smooth_array_df = pd.DataFrame(smooth_array, index=[i*grid_width for i in range(int(1/grid_width * xbounds[0]), int(1/grid_width * xbounds[1]))],
                                    columns=[i*grid_width for i in range(int(1/grid_width * ybounds[0]), int(1/grid_width * ybounds[1]))])
     return smooth_array_df
 
-
+# performs the Gaussian smoothing for shotScore
 def smooth_grid(grid, sigma):
     smooth_array = gaussian_filter(grid, sigma=sigma)
     return smooth_array
 
-
+# identifies average shotScore and 3PAV for each player
+# only for use after performing the R regression once shotScore is calculated for each shot
 def get_player_shot_score(read_filename, write_filename):
-    # this is going to require moving the linear regression from R
-    # because right now we do not have an adjusted accuracy parameter
     df = pd.read_csv(read_filename)
     player_shotscore = {}
     player_outcome = {}
@@ -170,7 +156,7 @@ def get_player_shot_score(read_filename, write_filename):
         for key, value in player_dict.items():
             writer.writerow([key] + value)
 
-
+# saves the smoother shotScore grids to csv files
 def write_smooth_grids(df):
     for angle in arcAngleProxy_to_two_dim_smooth_grid_dict.keys():
         arcAngleProxy_to_two_dim_smooth_grid_dict[angle] = get_smooth_gridded_shots(angle=angle, df=df, xbounds=XBOUNDS, ybounds=YBOUNDS)
@@ -185,6 +171,13 @@ def main():
     write_smooth_grids(threedata)
     add_shot_score(threedata)
     threedata.to_csv('threedata_shotscore.csv')
+
+    # get_player_shot_score can only be executed after the R script to generate three_data_shotscore_2.csv
+    # is run; this R script does the regression of ShotScore on shot factors and writes the predicted results
+    # for each attempt to three_data_shotscore_2.csv
+    # for this reason the below is commented out
+    # another approach would be to perform the regression in python
+
     # get_player_shot_score('threedata_shotscore_2.csv', 'player_shotscore.csv')
 
 
