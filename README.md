@@ -1,0 +1,1 @@
+This is a repository in support of my research paper titled "Beyond Binary: A New Approach to Evaluating Three-Point Accuracy in the NBA with Ball-Tracking Data," completed toward the fulfillment of the SDS 379R independent study for the ceritificate of Applied Statistical Modeling at UT Austin, under the supervision of Dr. Goldsberry.
